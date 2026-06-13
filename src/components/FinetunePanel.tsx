@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Play, Pause, RotateCcw, Settings, Activity, TrendingDown } from 'lucide-react';
 import type { FinetuneStep } from '../types';
 import { formatMSE } from '../utils/colorMap';
@@ -26,60 +26,111 @@ export function FinetunePanel({
   const [numSteps, setNumSteps] = useState(500);
   const [learningRate, setLearningRate] = useState(0.01);
   const [isPlaying, setIsPlaying] = useState(false);
-  const animationRef = useRef<number | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState(200);
+  
+  const animationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPlayingRef = useRef(false);
+
+  isPlayingRef.current = isPlaying;
 
   const currentStep = steps[currentStepIndex];
 
   useEffect(() => {
-    if (isPlaying && steps.length > 0) {
-      const animate = () => {
-        if (currentStepIndex < steps.length - 1) {
-          onStepChange(currentStepIndex + 1);
-          animationRef.current = requestAnimationFrame(() => {
-            setTimeout(animate, 100);
-          });
-        } else {
-          setIsPlaying(false);
-        }
-      };
-      animationRef.current = requestAnimationFrame(() => {
-        setTimeout(animate, 100);
-      });
+    if (!isPlaying || steps.length === 0) {
+      return;
     }
 
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
+    const tick = () => {
+      if (!isPlayingRef.current) return;
+      
+      if (currentStepIndex < steps.length - 1) {
+        onStepChange(currentStepIndex + 1);
+        animationTimerRef.current = setTimeout(tick, playbackSpeed);
+      } else {
+        setIsPlaying(false);
       }
     };
-  }, [isPlaying, currentStepIndex, steps.length, onStepChange]);
+
+    animationTimerRef.current = setTimeout(tick, playbackSpeed);
+
+    return () => {
+      if (animationTimerRef.current) {
+        clearTimeout(animationTimerRef.current);
+      }
+    };
+  }, [isPlaying, currentStepIndex, steps.length, onStepChange, playbackSpeed]);
 
   const handlePlayPause = useCallback(() => {
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
+    
     if (currentStepIndex >= steps.length - 1) {
       onStepChange(0);
+      setTimeout(() => setIsPlaying(true), 50);
+    } else {
+      setIsPlaying((prev) => !prev);
     }
-    setIsPlaying(!isPlaying);
-  }, [isPlaying, currentStepIndex, steps.length, onStepChange]);
+  }, [currentStepIndex, steps.length, onStepChange]);
 
   const handleReset = useCallback(() => {
     setIsPlaying(false);
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
     onStepChange(0);
   }, [onStepChange]);
 
   const handleStart = useCallback(() => {
     setIsPlaying(false);
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
     onStartFinetune(numSteps, learningRate);
   }, [numSteps, learningRate, onStartFinetune]);
 
   const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const index = parseInt(e.target.value, 10);
     setIsPlaying(false);
+    if (animationTimerRef.current) {
+      clearTimeout(animationTimerRef.current);
+      animationTimerRef.current = null;
+    }
     onStepChange(index);
   }, [onStepChange]);
 
-  const lossData = steps.map(s => s.loss);
-  const minLoss = Math.min(...lossData, 1);
-  const maxLoss = Math.max(...lossData, 0.01);
+  const lossData = useMemo(() => steps.map(s => s.loss), [steps]);
+  const stepNumbers = useMemo(() => steps.map(s => s.step), [steps]);
+
+  const { minLoss, maxLoss } = useMemo(() => {
+    if (lossData.length === 0) return { minLoss: 0, maxLoss: 1 };
+    let min = Math.min(...lossData);
+    let max = Math.max(...lossData);
+    if (min === max) {
+      min = min * 0.9;
+      max = max * 1.1;
+    }
+    return { minLoss: min, maxLoss: max };
+  }, [lossData]);
+
+  const pathPoints = useMemo(() => {
+    if (lossData.length <= 1) return '';
+    return lossData.map((loss, i) => {
+      const x = (i / (lossData.length - 1)) * 100;
+      const y = 100 - ((loss - minLoss) / (maxLoss - minLoss)) * 100;
+      return `${x.toFixed(2)}% ${y.toFixed(2)}%`;
+    }).join(' ');
+  }, [lossData, minLoss, maxLoss]);
+
+  const currentPoint = useMemo(() => {
+    if (lossData.length <= 1) return { x: 0, y: 100 };
+    const x = (currentStepIndex / (lossData.length - 1)) * 100;
+    const y = 100 - ((lossData[currentStepIndex] - minLoss) / (maxLoss - minLoss)) * 100;
+    return { x, y };
+  }, [lossData, currentStepIndex, minLoss, maxLoss]);
 
   return (
     <div className="bg-zinc-800/30 backdrop-blur-sm rounded-2xl border border-zinc-700/50 overflow-hidden">
@@ -109,7 +160,7 @@ export function FinetunePanel({
 
       {isExpanded && (
         <div className="border-t border-zinc-700/50 p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-700/30">
               <label className="text-sm text-zinc-400 mb-2 block flex items-center gap-2">
                 <Settings className="w-4 h-4" />
@@ -142,6 +193,23 @@ export function FinetunePanel({
               />
             </div>
 
+            <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-700/30">
+              <label className="text-sm text-zinc-400 mb-2 block flex items-center gap-2">
+                <Settings className="w-4 h-4" />
+                播放速度
+              </label>
+              <select
+                value={playbackSpeed}
+                onChange={(e) => setPlaybackSpeed(parseInt(e.target.value))}
+                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white font-mono focus:outline-none focus:border-emerald-500"
+              >
+                <option value={500}>慢 (0.5s)</option>
+                <option value={200}>正常 (0.2s)</option>
+                <option value={100}>快 (0.1s)</option>
+                <option value={50}>极速 (0.05s)</option>
+              </select>
+            </div>
+
             <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-700/30 flex flex-col justify-end">
               <button
                 onClick={handleStart}
@@ -169,7 +237,7 @@ export function FinetunePanel({
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <TrendingDown className="w-4 h-4 text-emerald-400" />
-                    <span className="text-sm text-zinc-400">损失曲线</span>
+                    <span className="text-sm text-zinc-400">损失曲线 (Loss Curve)</span>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
                     <span className="text-zinc-500">
@@ -181,50 +249,64 @@ export function FinetunePanel({
                   </div>
                 </div>
 
-                <div className="relative h-24 bg-zinc-800 rounded-lg overflow-hidden">
-                  <svg className="w-full h-full" preserveAspectRatio="none">
+                <div className="relative h-28 bg-zinc-800 rounded-lg overflow-hidden">
+                  <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                     <defs>
                       <linearGradient id="lossGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.4" />
+                        <stop offset="100%" stopColor="#10b981" stopOpacity="0.05" />
                       </linearGradient>
                     </defs>
+                    
+                    {[0.25, 0.5, 0.75].map((p, i) => (
+                      <line
+                        key={i}
+                        x1="0"
+                        y1={p * 100}
+                        x2="100"
+                        y2={p * 100}
+                        stroke="#3f3f46"
+                        strokeWidth="0.2"
+                        strokeDasharray="1,1"
+                      />
+                    ))}
                     
                     {lossData.length > 1 && (
                       <>
                         <path
-                          d={`M 0 ${100 - ((lossData[0] - minLoss) / (maxLoss - minLoss)) * 100}% ${lossData
-                            .map((loss, i) => {
-                              const x = (i / (lossData.length - 1)) * 100;
-                              const y = 100 - ((loss - minLoss) / (maxLoss - minLoss)) * 100;
-                              return `L ${x}% ${y}%`;
-                            })
-                            .join(' ')} L 100% 100% L 0% 100% Z`}
+                          d={`M 0 ${100 - ((lossData[0] - minLoss) / (maxLoss - minLoss)) * 100} L ${pathPoints} L 100 100 L 0 100 Z`}
                           fill="url(#lossGradient)"
                         />
-                        <path
-                          d={`M 0 ${100 - ((lossData[0] - minLoss) / (maxLoss - minLoss)) * 100}% ${lossData
-                            .map((loss, i) => {
-                              const x = (i / (lossData.length - 1)) * 100;
-                              const y = 100 - ((loss - minLoss) / (maxLoss - minLoss)) * 100;
-                              return `L ${x}% ${y}%`;
-                            })
-                            .join(' ')}`}
+                        <polyline
+                          points={pathPoints}
                           fill="none"
                           stroke="#10b981"
-                          strokeWidth="2"
+                          strokeWidth="0.8"
+                          vectorEffect="non-scaling-stroke"
                         />
                         <circle
-                          cx={`${(currentStepIndex / (lossData.length - 1)) * 100}%`}
-                          cy={`${100 - ((lossData[currentStepIndex] - minLoss) / (maxLoss - minLoss)) * 100}%`}
-                          r="5"
+                          cx={currentPoint.x}
+                          cy={currentPoint.y}
+                          r="2.5"
                           fill="#fbbf24"
                           stroke="#fff"
-                          strokeWidth="2"
+                          strokeWidth="0.5"
+                          vectorEffect="non-scaling-stroke"
                         />
                       </>
                     )}
                   </svg>
+
+                  <div className="absolute left-2 top-0 bottom-0 flex flex-col justify-between py-1 pointer-events-none">
+                    <span className="text-[9px] text-zinc-500 font-mono">{maxLoss.toExponential(1)}</span>
+                    <span className="text-[9px] text-zinc-500 font-mono">{((minLoss + maxLoss) / 2).toExponential(1)}</span>
+                    <span className="text-[9px] text-zinc-500 font-mono">{minLoss.toExponential(1)}</span>
+                  </div>
+
+                  <div className="absolute bottom-0 left-6 right-2 flex justify-between pointer-events-none">
+                    <span className="text-[9px] text-zinc-500 font-mono">Step {stepNumbers[0]}</span>
+                    <span className="text-[9px] text-zinc-500 font-mono">Step {stepNumbers[stepNumbers.length - 1]}</span>
+                  </div>
                 </div>
               </div>
 
@@ -277,8 +359,8 @@ export function FinetunePanel({
                   className="w-full h-2 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
                 />
                 <div className="flex justify-between mt-1 text-xs text-zinc-600">
-                  <span>0</span>
-                  <span>{steps[steps.length - 1]?.step ?? 0}</span>
+                  <span>Step 0</span>
+                  <span>Step {steps[steps.length - 1]?.step ?? 0}</span>
                 </div>
               </div>
 

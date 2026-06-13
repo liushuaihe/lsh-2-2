@@ -5,6 +5,7 @@ import {
   createRecord,
   deleteRecord,
   clearAllRecords,
+  findDuplicateRecord,
 } from '../services/storageService';
 import type { SaveRecordRequest } from '../types';
 
@@ -70,6 +71,32 @@ export function saveRecord(req: Request<object, object, SaveRecordRequest>, res:
       });
     }
 
+    const normalizedStats = stats ?? {
+      originalParams: matrixW.rows * matrixW.cols,
+      loraParams: rank * (matrixW.rows + matrixW.cols),
+      savingRatio: 1 - (rank * (matrixW.rows + matrixW.cols)) / (matrixW.rows * matrixW.cols),
+      mse: 0,
+      deltaNorm: 0,
+      updatedNorm: 0,
+    };
+
+    const duplicateCheck = findDuplicateRecord({
+      seed: seed ?? 42,
+      rank: rank ?? 8,
+      alpha: alpha ?? 1.0,
+      stats: normalizedStats,
+    });
+
+    if (duplicateCheck.isDuplicate && duplicateCheck.existingRecord) {
+      const existing = duplicateCheck.existingRecord;
+      return res.status(409).json({
+        success: false,
+        error: 'Duplicate record',
+        message: `相同配置 (Seed=${existing.seed}, Rank=${existing.rank}, α=${existing.alpha.toFixed(2)}) 的记录已存在，保存时间: ${new Date(existing.timestamp).toLocaleString('zh-CN')}`,
+        existingRecord: existing,
+      });
+    }
+
     const record = createRecord({
       seed: seed ?? 42,
       rank: rank ?? 8,
@@ -81,14 +108,7 @@ export function saveRecord(req: Request<object, object, SaveRecordRequest>, res:
       matrixB,
       matrixDelta,
       matrixUpdated,
-      stats: stats ?? {
-        originalParams: matrixW.rows * matrixW.cols,
-        loraParams: rank * (matrixW.rows + matrixW.cols),
-        savingRatio: 1 - (rank * (matrixW.rows + matrixW.cols)) / (matrixW.rows * matrixW.cols),
-        mse: 0,
-        deltaNorm: 0,
-        updatedNorm: 0,
-      },
+      stats: normalizedStats,
     });
 
     res.json({

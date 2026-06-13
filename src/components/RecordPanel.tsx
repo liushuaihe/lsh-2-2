@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Trash2, Download, Clock, Hash, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { Database, Trash2, Download, Clock, Hash, Search, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import type { MatrixRecord } from '../types';
 import { formatPercentage, formatMSE } from '../utils/colorMap';
 
@@ -22,6 +22,7 @@ export function RecordPanel({
 }: RecordPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [isSavingLocal, setIsSavingLocal] = useState(false);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString('zh-CN', {
@@ -43,6 +44,15 @@ export function RecordPanel({
     }
   };
 
+  const handleSaveClick = () => {
+    if (isSavingLocal || isLoading) return;
+    setIsSavingLocal(true);
+    onSaveCurrent();
+    setTimeout(() => {
+      setIsSavingLocal(false);
+    }, 1200);
+  };
+
   return (
     <div className="bg-zinc-800/30 backdrop-blur-sm rounded-2xl border border-zinc-700/50 overflow-hidden">
       <div
@@ -60,12 +70,25 @@ export function RecordPanel({
         </button>
         <div className="flex items-center gap-3">
           <button
-            onClick={onSaveCurrent}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+            onClick={handleSaveClick}
+            disabled={isLoading || isSavingLocal}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-sm ${
+              isSavingLocal
+                ? 'bg-purple-500/50 cursor-not-allowed text-white/80 scale-95'
+                : 'bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white'
+            }`}
           >
-            <Download className="w-4 h-4" />
-            保存当前
+            {isSavingLocal ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                保存中...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                保存当前
+              </>
+            )}
           </button>
           <button
             onClick={() => setIsExpanded(!isExpanded)}

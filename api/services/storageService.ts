@@ -79,3 +79,41 @@ export function clearAllRecords(): void {
   records = [];
   saveRecords();
 }
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  existingRecord?: MatrixRecord;
+}
+
+function approxEqual(a: number, b: number, epsilon: number = 1e-8): boolean {
+  return Math.abs(a - b) < epsilon;
+}
+
+export function findDuplicateRecord(candidate: {
+  seed: number;
+  rank: number;
+  alpha: number;
+  stats?: {
+    mse: number;
+    deltaNorm: number;
+    updatedNorm: number;
+  };
+}): DuplicateCheckResult {
+  const { seed, rank, alpha, stats } = candidate;
+
+  for (const record of records) {
+    if (
+      record.seed === seed &&
+      record.rank === rank &&
+      approxEqual(record.alpha, alpha, 1e-6) &&
+      stats &&
+      approxEqual(record.stats.mse, stats.mse, 1e-8) &&
+      approxEqual(record.stats.deltaNorm, stats.deltaNorm, 1e-6) &&
+      approxEqual(record.stats.updatedNorm, stats.updatedNorm, 1e-6)
+    ) {
+      return { isDuplicate: true, existingRecord: record };
+    }
+  }
+
+  return { isDuplicate: false };
+}

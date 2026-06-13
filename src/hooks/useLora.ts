@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { 
   DecomposeResponse, 
   GenerateResponse, 
@@ -199,11 +199,21 @@ export function useLora(): LoraState {
     }
   }, [finetuneSteps]);
 
+  const isSavingRef = useRef(false);
+  const loadRecordsRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
   const saveCurrentRecord = useCallback(async (currentSeed: number) => {
+    if (isSavingRef.current) {
+      console.log('Save already in progress, skipping');
+      return;
+    }
+    
     if (!matrixW || !matrixA || !matrixB || !matrixDelta || !matrixUpdated) {
       setError('Cannot save: missing matrix data');
       return;
     }
+
+    isSavingRef.current = true;
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/records`, {
@@ -232,13 +242,22 @@ export function useLora(): LoraState {
       });
 
       if (!response.ok) {
+        if (response.status === 409) {
+          const errData = await response.json();
+          setError(errData.message || '此记录已存在，无需重复保存');
+          return;
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      await loadRecords();
+      await loadRecordsRef.current();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save record');
       console.error('Save record error:', err);
+    } finally {
+      setTimeout(() => {
+        isSavingRef.current = false;
+      }, 1000);
     }
   }, [matrixW, matrixA, matrixB, matrixDelta, matrixUpdated, rank, alpha, stats, deltaStats]);
 
@@ -265,6 +284,10 @@ export function useLora(): LoraState {
       console.error('Load records error:', err);
     }
   }, []);
+
+  useEffect(() => {
+    loadRecordsRef.current = loadRecords;
+  }, [loadRecords]);
 
   const deleteRecord = useCallback(async (id: string) => {
     try {
