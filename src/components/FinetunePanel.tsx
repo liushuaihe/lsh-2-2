@@ -115,8 +115,25 @@ export function FinetunePanel({
       clearTimeout(animationTimerRef.current);
       animationTimerRef.current = null;
     }
-    onStartFinetune(numSteps, learningRate);
-  }, [numSteps, learningRate, onStartFinetune]);
+
+    let finalSteps = numSteps;
+    const stepsVal = parseInt(numStepsInput, 10);
+    if (!isNaN(stepsVal)) {
+      finalSteps = Math.max(10, Math.min(2000, Math.round(stepsVal / 10) * 10));
+      setNumSteps(finalSteps);
+      setNumStepsInput(String(finalSteps));
+    }
+
+    let finalLR = learningRate;
+    const lrVal = parseFloat(learningRateInput);
+    if (!isNaN(lrVal)) {
+      finalLR = Math.max(0.001, Math.min(0.5, lrVal));
+      setLearningRate(finalLR);
+      setLearningRateInput(String(finalLR));
+    }
+
+    onStartFinetune(finalSteps, finalLR);
+  }, [numSteps, learningRate, numStepsInput, learningRateInput, onStartFinetune]);
 
   const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const index = parseInt(e.target.value, 10);
