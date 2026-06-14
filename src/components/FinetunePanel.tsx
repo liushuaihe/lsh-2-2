@@ -25,6 +25,8 @@ export function FinetunePanel({
   const [isExpanded, setIsExpanded] = useState(false);
   const [numSteps, setNumSteps] = useState(500);
   const [learningRate, setLearningRate] = useState(0.01);
+  const [numStepsInput, setNumStepsInput] = useState('500');
+  const [learningRateInput, setLearningRateInput] = useState('0.01');
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(200);
   
@@ -59,6 +61,30 @@ export function FinetunePanel({
       }
     };
   }, [isPlaying, currentStepIndex, steps.length, onStepChange, playbackSpeed]);
+
+  const handleNumStepsBlur = useCallback(() => {
+    const val = parseInt(numStepsInput, 10);
+    if (isNaN(val)) {
+      setNumSteps(10);
+      setNumStepsInput('10');
+    } else {
+      const clamped = Math.max(10, Math.min(2000, Math.round(val / 10) * 10));
+      setNumSteps(clamped);
+      setNumStepsInput(String(clamped));
+    }
+  }, [numStepsInput]);
+
+  const handleLearningRateBlur = useCallback(() => {
+    const val = parseFloat(learningRateInput);
+    if (isNaN(val)) {
+      setLearningRate(0.01);
+      setLearningRateInput('0.01');
+    } else {
+      const clamped = Math.max(0.001, Math.min(0.5, val));
+      setLearningRate(clamped);
+      setLearningRateInput(String(clamped));
+    }
+  }, [learningRateInput]);
 
   const handlePlayPause = useCallback(() => {
     if (animationTimerRef.current) {
@@ -217,8 +243,14 @@ export function FinetunePanel({
                 min={10}
                 max={2000}
                 step={10}
-                value={numSteps}
-                onChange={(e) => setNumSteps(Math.max(10, Math.min(2000, parseInt(e.target.value) || 100)))}
+                value={numStepsInput}
+                onChange={(e) => setNumStepsInput(e.target.value)}
+                onBlur={handleNumStepsBlur}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white font-mono focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -233,8 +265,14 @@ export function FinetunePanel({
                 min={0.001}
                 max={0.5}
                 step={0.001}
-                value={learningRate}
-                onChange={(e) => setLearningRate(Math.max(0.001, Math.min(0.5, parseFloat(e.target.value) || 0.01)))}
+                value={learningRateInput}
+                onChange={(e) => setLearningRateInput(e.target.value)}
+                onBlur={handleLearningRateBlur}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
                 className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white font-mono focus:outline-none focus:border-emerald-500"
               />
             </div>
